@@ -1,0 +1,3 @@
+/home/newsun/rm/stn_test/src/build/CMakeFiles/rebuild_cache.dir
+/home/newsun/rm/stn_test/src/build/CMakeFiles/edit_cache.dir
+/home/newsun/rm/stn_test/src/build/CMakeFiles/predict.dir

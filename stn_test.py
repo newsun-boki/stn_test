@@ -8,37 +8,26 @@ from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb 
-wandb.login()
+from data_process import read_image  
 
-plt.ion()   # interactive mode
-
-from six.moves import urllib
-opener = urllib.request.build_opener()
-opener.addheaders = [('User-agent', 'Mozilla/5.0')]
-urllib.request.install_opener(opener)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-#wandb hyper
-configs = dict(
-    epochs=20,
-    batch_size=64,
-    dataset="MNIST",
-    architecture="CNN")
-wandb.init(config=configs)
+global train_loader
+global test_loader
 # Training dataset
-train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST(root='.', train=True, download=True,
-                   transform=transforms.Compose([
-                       transforms.ToTensor(),
-                       transforms.Normalize((0.1307,), (0.3081,))
-                   ])), batch_size=wandb.config.batch_size, shuffle=True, num_workers=4)
-# Test dataset
-test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST(root='.', train=False, transform=transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])), batch_size=wandb.config.batch_size, shuffle=True, num_workers=4)
+def load_dataset(): 
+    
+    train_loader = torch.utils.data.DataLoader(
+        datasets.MNIST(root='.', train=True, download=True,
+                    transform=transforms.Compose([
+                        transforms.ToTensor(),
+                        transforms.Normalize((0.1307,), (0.3081,))
+                    ])), batch_size=wandb.config.batch_size, shuffle=True, num_workers=4)
+    # Test dataset
+    
+    test_loader = torch.utils.data.DataLoader(
+        datasets.MNIST(root='.', train=False, transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])), batch_size=wandb.config.batch_size, shuffle=True, num_workers=4)
 
 class Net(nn.Module):
     def __init__(self):
@@ -96,9 +85,6 @@ class Net(nn.Module):
         return F.log_softmax(x, dim=1)
 
 
-model = Net().to(device)
-wandb.watch(model, log_freq=100)
-optimizer = optim.SGD(model.parameters(), lr=0.01)
 
 
 def train(epoch):
@@ -108,21 +94,22 @@ def train(epoch):
         if epoch < 3:
             wandb.log({"data" : [wandb.Image(im) for im in data]})
         optimizer.zero_grad()
+        # print(data.shape)
         output = model(data)
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
-        if batch_idx % 500 == 0:
+        if batch_idx % 100 == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
-        wandb.log({'epoch': epoch, 'loss': loss.item()})
+            wandb.log({'loss': loss})
 #
 # A simple test procedure to measure the STN performances on MNIST.
 #
 
-
 def test(epoch):
+    global max_accuraccy
     with torch.no_grad():
         model.eval()
         test_loss = 0
@@ -141,7 +128,12 @@ def test(epoch):
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'
               .format(test_loss, correct, len(test_loader.dataset),
                       100. * correct / len(test_loader.dataset)))
-        wandb.log({'accuracy':correct / len(test_loader.dataset)})
+        wandb.log({'accuracy':(100. * correct / len(test_loader.dataset))})
+        accuracy = 100. * correct / len(test_loader.dataset)
+        print(max_accuraccy)
+        if accuracy >= max_accuraccy :
+            max_accuraccy = accuracy
+            torch.save(model.state_dict(),"/home/newsun/rm/stn_test/output/best.pt")
         torch.save(model.state_dict(),"/home/newsun/rm/stn_test/output/last.pt")
 
 def convert_image_np(inp):
@@ -179,13 +171,38 @@ def visualize_stn():
 
         axarr[1].imshow(out_grid)
         axarr[1].set_title('Transformed Images')
+if __name__ == "__main__":
+    wandb.login()
 
-for epoch in range(1, wandb.config.epochs):
-    train(epoch)
-    test(epoch)
+    plt.ion()   # interactive mode
 
-# Visualize the STN transformation on some input batch
-visualize_stn()
+    from six.moves import urllib
+    opener = urllib.request.build_opener()
+    opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+    urllib.request.install_opener(opener)
 
-plt.ioff()
-plt.show()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    #wandb hyper
+    configs = dict(
+        epochs=100,
+        batch_size=64,
+        dataset="MNIST",
+        architecture="CNN")
+    wandb.init(config=configs)
+    # load_dataset()
+    train_loader, test_loader, n_class, train_dataset, test_dataset = read_image('/home/newsun/cnn/cnntrain_old',28)
+    model = Net().to(device)
+    wandb.watch(model, log="all")
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    
+    max_accuraccy = 0
+    for epoch in range(1, wandb.config.epochs):
+        train(epoch)
+        test(epoch)
+
+    # Visualize the STN transformation on some input batch
+    visualize_stn()
+
+    plt.ioff()
+    plt.show()
